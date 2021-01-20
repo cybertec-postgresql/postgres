@@ -3,7 +3,7 @@
  * pg_verifybackup.c
  *	  Verify a backup against a backup manifest.
  *
- * Portions Copyright (c) 1996-2020, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2021, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/bin/pg_verifybackup/pg_verifybackup.c
@@ -57,6 +57,14 @@ typedef struct manifest_file
 	bool		matched;
 	bool		bad;
 } manifest_file;
+
+#ifdef	USE_ENCRYPTION
+/*
+ * -K option needs these variables.
+ */
+static bool data_encrypted;
+static char *encryption_key_command;
+#endif
 
 /*
  * Define a hash table which we can use to store information about the files
@@ -160,6 +168,9 @@ main(int argc, char **argv)
 	static struct option long_options[] = {
 		{"exit-on-error", no_argument, NULL, 'e'},
 		{"ignore", required_argument, NULL, 'i'},
+#ifdef	USE_ENCRYPTION
+		{"encryption-key-command", required_argument, NULL, 'K'},
+#endif
 		{"manifest-path", required_argument, NULL, 'm'},
 		{"no-parse-wal", no_argument, NULL, 'n'},
 		{"quiet", no_argument, NULL, 'q'},
@@ -219,7 +230,13 @@ main(int argc, char **argv)
 	simple_string_list_append(&context.ignore_list, "recovery.signal");
 	simple_string_list_append(&context.ignore_list, "standby.signal");
 
+	data_encrypted = false;
+
+#ifdef	USE_ENCRYPTION
+	while ((c = getopt_long(argc, argv, "ei:m:K:nqsw:", long_options, NULL)) != -1)
+#else
 	while ((c = getopt_long(argc, argv, "ei:m:nqsw:", long_options, NULL)) != -1)
+#endif
 	{
 		switch (c)
 		{
@@ -241,6 +258,12 @@ main(int argc, char **argv)
 			case 'n':
 				no_parse_wal = true;
 				break;
+#ifdef	USE_ENCRYPTION
+			case 'K':
+				encryption_key_command = pg_strdup(optarg);
+				data_encrypted = true;
+				break;
+#endif							/* USE_ENCRYPTION */
 			case 'q':
 				quiet = true;
 				break;
@@ -793,12 +816,31 @@ parse_required_wal(verifier_context *context, char *pg_waldump_path,
 	{
 		char	   *pg_waldump_cmd;
 
+#ifdef	USE_ENCRYPTION
+		if (data_encrypted)
+			pg_waldump_cmd = psprintf("\"%s\" --quiet --path=\"%s\" --timeline=%u --start=%X/%X --end=%X/%X" \
+									  " -K %s\n",
+									  pg_waldump_path, wal_directory, this_wal_range->tli,
+									  (uint32) (this_wal_range->start_lsn >> 32),
+									  (uint32) this_wal_range->start_lsn,
+									  (uint32) (this_wal_range->end_lsn >> 32),
+									  (uint32) this_wal_range->end_lsn,
+									  encryption_key_command);
+		else
+			pg_waldump_cmd = psprintf("\"%s\" --quiet --path=\"%s\" --timeline=%u --start=%X/%X --end=%X/%X\n",
+									  pg_waldump_path, wal_directory, this_wal_range->tli,
+									  (uint32) (this_wal_range->start_lsn >> 32),
+									  (uint32) this_wal_range->start_lsn,
+									  (uint32) (this_wal_range->end_lsn >> 32),
+									  (uint32) this_wal_range->end_lsn);
+#else
 		pg_waldump_cmd = psprintf("\"%s\" --quiet --path=\"%s\" --timeline=%u --start=%X/%X --end=%X/%X\n",
 								  pg_waldump_path, wal_directory, this_wal_range->tli,
 								  (uint32) (this_wal_range->start_lsn >> 32),
 								  (uint32) this_wal_range->start_lsn,
 								  (uint32) (this_wal_range->end_lsn >> 32),
 								  (uint32) this_wal_range->end_lsn);
+#endif
 		if (system(pg_waldump_cmd) != 0)
 			report_backup_error(context,
 								"WAL parsing failed for timeline %u",
@@ -894,6 +936,10 @@ usage(void)
 	printf(_("  -i, --ignore=RELATIVE_PATH  ignore indicated path\n"));
 	printf(_("  -m, --manifest-path=PATH    use specified path for manifest\n"));
 	printf(_("  -n, --no-parse-wal          do not try to parse WAL files\n"));
+#ifdef	USE_ENCRYPTION
+	printf(_("  -K, --encryption-key-command=COMMAND\n"
+			 "                         command that returns encryption key\n"));
+#endif							/* USE_ENCRYPTION */
 	printf(_("  -q, --quiet                 do not print any output, except for errors\n"));
 	printf(_("  -s, --skip-checksums        skip checksum verification\n"));
 	printf(_("  -w, --wal-directory=PATH    use specified path for WAL files\n"));
