@@ -2317,6 +2317,26 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 
 		/* initdb */
 		header(_("initializing database system"));
+#ifdef USE_ENCRYPTION
+		snprintf(buf, sizeof(buf),
+				 "echo \"echo 00111111111122222222233333333344\" > \"%s/keypass\"; chmod +x \"%s/keypass\"",
+				 temp_instance, temp_instance);
+		if (system(buf))
+		{
+			fprintf(stderr, _("\n%s: Could not create keypass file.\nCommand was: %s\n"), progname, buf);
+			exit(2);
+		}
+
+		snprintf(buf, sizeof(buf),
+				 "\"%s%sinitdb\" -D \"%s/data\" -K \"%s/keypass\" --no-clean --no-sync%s%s > \"%s/log/initdb.log\" 2>&1",
+				 bindir ? bindir : "",
+				 bindir ? "/" : "",
+				 temp_instance,
+				 temp_instance,
+				 debug ? " --debug" : "",
+				 nolocale ? " --no-locale" : "",
+				 outputdir);
+#else
 		snprintf(buf, sizeof(buf),
 				 "\"%s%sinitdb\" -D \"%s/data\" --no-clean --no-sync%s%s > \"%s/log/initdb.log\" 2>&1",
 				 bindir ? bindir : "",
@@ -2325,6 +2345,7 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 				 debug ? " --debug" : "",
 				 nolocale ? " --no-locale" : "",
 				 outputdir);
+#endif
 		if (system(buf))
 		{
 			fprintf(stderr, _("\n%s: initdb failed\nExamine %s/log/initdb.log for the reason.\nCommand was: %s\n"), progname, outputdir, buf);
