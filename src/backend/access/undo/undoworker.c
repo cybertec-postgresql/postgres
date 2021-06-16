@@ -44,7 +44,7 @@ static void RegisterUndoWorker(Oid dboid);
 static List *get_database_list(void);
 
 void
-RegisterUndoLauncher(void)
+UndoLauncherRegister(void)
 {
 	BackgroundWorker bgw;
 

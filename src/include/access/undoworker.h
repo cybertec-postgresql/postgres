@@ -16,7 +16,7 @@
 
 #include "postgres.h"
 
-extern void RegisterUndoLauncher(void);
+extern void UndoLauncherRegister(void);
 extern void UndoLauncherMain(Datum main_arg);
 extern void UndoWorkerMain(Datum main_arg);
 

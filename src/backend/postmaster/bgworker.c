@@ -12,6 +12,7 @@
 
 #include "postgres.h"
 
+#include "access/discardworker.h"
 #include "access/parallel.h"
 #include "access/undoworker.h"
 #include "libpq/pqsignal.h"
@@ -135,6 +136,9 @@ static const struct
 	},
 	{
 		"UndoWorkerMain", UndoWorkerMain
+	},
+	{
+		"DiscardWorkerMain", DiscardWorkerMain
 	}
 };
 

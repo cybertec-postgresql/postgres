@@ -2146,10 +2146,6 @@ typedef struct URSEntry
  *
  * Hash table that we use to collect the information is returned.
  *
- * Currently callers of this function do not expect that undo log will be
- * discarded concurrently, so we don't lock the slots as strictly as one might
- * expect.
- *
  * TODO Implement this in a way that allows the chunk information to be
  * spilled to disk. Otherwise insufficient memory will break discarding
  * altogether.
@@ -2243,9 +2239,31 @@ GetAllUndoRecordSets(void)
 			/* No chunk should end beyond the insert position. */
 			Assert(cur <= insert);
 
-			/* Callers of this function are not interested in open chunks. */
+			/*
+			 * Callers of this function are not interested in open chunks.
+			 *
+			 * Note: this should only be possible if the inserting backend
+			 * crashed. On the other hand, if the URS is still being inserted,
+			 * all its buffers should be locked in exclusive mode so we cannot
+			 * include it in our result.
+			 */
 			if (size == 0)
+			{
+				/* Caller is not interested in incomplete URS as well. */
+				if (chunk_hdr.previous_chunk != InvalidUndoRecPtr)
+				{
+					entry = chunktable_lookup(chunks,
+											  chunk_hdr.previous_chunk);
+
+					/* We should have seen the previous chunk already. */
+					Assert(entry != NULL);
+					Assert(entry->last_chunk == chunk_hdr.previous_chunk);
+
+					chunktable_delete(chunks, chunk_hdr.previous_chunk);
+				}
+
 				break;
+			}
 
 			/*
 			 * TODO Can empty sets be there? If we want to skip them, consider
@@ -2288,8 +2306,15 @@ GetAllUndoRecordSets(void)
 				begin = entry->begin;
 				urs_type = entry->urs_type;
 
-				/* All chunks should be discarded or none. */
-				Assert(chunk_hdr.discarded == entry->discarded);
+				/*
+				 * All chunks should be discarded or none. If a mismatch is
+				 * encountered, another backend is probably discarding the URS
+				 * concurrently.
+				 */
+				if (chunk_hdr.discarded != entry->discarded)
+					elog(ERROR,
+						 "some chunks of undo record set are discarded while other are not");
+
 				discarded = entry->discarded;
 
 				/*
@@ -2678,6 +2703,9 @@ AdvanceOldestXidHavingUndo(void)
 	pg_atomic_write_u64(&ProcGlobal->oldestFullXidHavingUndo,
 						U64FromFullTransactionId(oldestFullXidHavingUndo));
 
+	elog(DEBUG1, "the current value of oldestXidHavingUndo is %u",
+		 oldestXidHavingUndo);
+
 	return oldestXidHavingUndo;
 }
 
@@ -2757,8 +2785,9 @@ DiscardUndoRecordSetChunks(void)
 }
 
 /*
- * User interface for AdvanceOldextXidHavingUndo(), primarily for debugging
- * purposes.
+ * User interface for AdvanceOldextXidHavingUndo(), for debugging purposes
+ * only. CAUTION: It's not recommended to call this function while the discard
+ * worker is running - should it be moved to an extension?
  */
 Datum
 pg_advance_oldest_xid_having_undo(PG_FUNCTION_ARGS)
@@ -2769,8 +2798,9 @@ pg_advance_oldest_xid_having_undo(PG_FUNCTION_ARGS)
 }
 
 /*
- * User interface for DiscardUndoRecordSetChunks(), primarily for debugging
- * purposes.
+ * User interface for DiscardUndoRecordSetChunks(), for debugging purposes
+ * only. CAUTION: It's not recommended to call this function while the discard
+ * worker is running - should it be moved to an extension?
  */
 Datum
 pg_discard_undo_record_set_chunks(PG_FUNCTION_ARGS)

@@ -93,6 +93,7 @@
 #include <pthread.h>
 #endif
 
+#include "access/discardworker.h"
 #include "access/transam.h"
 #include "access/undoworker.h"
 #include "access/xlog.h"
@@ -999,7 +1000,10 @@ PostmasterMain(int argc, char *argv[])
 	ApplyLauncherRegister();
 
 	/* Similarly for the undo launcher. */
-	RegisterUndoLauncher();
+	UndoLauncherRegister();
+
+	/* Likewise for the undo discard worker. */
+	DiscardWorkerRegister();
 
 	/*
 	 * process any libraries that should be preloaded at postmaster start

@@ -13,6 +13,7 @@ top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
 OBJS = \
+	discardworker.o \
 	undo.o \
 	undolog.o \
 	undopage.o \
